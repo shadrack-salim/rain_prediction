@@ -1,5 +1,5 @@
-Flask
+fastapi
+uvicorn
+joblib
 pandas
 scikit-learn
-joblib
-gunicorn
