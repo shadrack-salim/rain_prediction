@@ -1,62 +1,96 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import joblib
-import pandas as pd
-from datetime import datetime
+from joblib import load
+import numpy as np
+from typing import List
+import os
 
-# === Load the trained model ===
-model = joblib.load('models/Rain_Classifier_With_Season.pkl')
+# Create FastAPI app
+app = FastAPI(title="Rainfall Prediction API")
 
-# === Create FastAPI app ===
-app = FastAPI(title="Rain Predictor API")
+# Load models
+model_path = os.path.join(os.path.dirname(__file__), "models")
+classifier = load(os.path.join(model_path, "rainfall_classifier.joblib"))
+regressor = load(os.path.join(model_path, "rainfall_regression.joblib"))
 
-# === Pydantic model for input ===
+# Define input schema
 class WeatherInput(BaseModel):
-    datetime_str: str  # Format: YYYY-MM-DD HH:MM
-    temperature_c: float
-    humidity_percent: float
+    day_of_year: int
+    month: int
+    weekday: int
+    year: int
 
-# === Season function ===
-def get_season(month):
-    return 'wet' if month in [5, 6, 7, 8, 9, 10] else 'dry'
+class BatchWeatherInput(BaseModel):
+    data: List[WeatherInput]
 
-# === Root route to verify API is live ===
+# Define prediction endpoint
+@app.post("/predict/")
+async def predict_rainfall(weather_data: WeatherInput):
+    # Convert input to format expected by the model
+    features = [[
+        weather_data.day_of_year,
+        weather_data.month,
+        weather_data.weekday,
+        weather_data.year
+    ]]
+    
+    # Make predictions
+    is_wet_day = bool(classifier.predict(features)[0])
+    
+    if is_wet_day:
+        # Predict amount (remember to transform back from log)
+        rain_amount_log = regressor.predict(features)[0]
+        rain_amount = float(np.expm1(rain_amount_log))
+        return {
+            "will_rain": True,
+            "precipitation_mm": round(rain_amount, 2)
+        }
+    else:
+        return {
+            "will_rain": False,
+            "precipitation_mm": 0.0
+        }
+
+# Batch prediction endpoint
+@app.post("/predict-batch/")
+async def predict_batch(batch_data: BatchWeatherInput):
+    # Extract features
+    features = [[
+        item.day_of_year,
+        item.month,
+        item.weekday,
+        item.year
+    ] for item in batch_data.data]
+    
+    # Make predictions
+    is_wet_day = classifier.predict(features)
+    results = []
+    
+    for i, wet_day in enumerate(is_wet_day):
+        if wet_day:
+            rain_amount_log = regressor.predict([features[i]])[0]
+            rain_amount = float(np.expm1(rain_amount_log))
+            results.append({
+                "will_rain": True,
+                "precipitation_mm": round(rain_amount, 2)
+            })
+        else:
+            results.append({
+                "will_rain": False,
+                "precipitation_mm": 0.0
+            })
+    
+    return {"predictions": results}
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+# Root endpoint
 @app.get("/")
-def read_root():
-    return {"message": "Rain Predictor API is live ✅"}
-
-# === Prediction endpoint ===
-@app.post("/predict_rain")
-def predict_rain(data: WeatherInput):
-    try:
-        dt = datetime.strptime(data.datetime_str, "%Y-%m-%d %H:%M")
-    except ValueError:
-        return {"error": "datetime_str must be in 'YYYY-MM-DD HH:MM' format"}
-
-    hour = dt.hour
-    dayofweek = dt.weekday()
-    month = dt.month
-    day = dt.day
-    season = get_season(month)
-    season_wet = 1 if season == 'wet' else 0
-
-    # Prepare features
-    features = pd.DataFrame([{
-        'hour': hour,
-        'dayofweek': dayofweek,
-        'month': month,
-        'day': day,
-        'Temperature_C': data.temperature_c,
-        'Humidity_%': data.humidity_percent,
-        'season_wet': season_wet
-    }])
-
-    # Predict
-    prob = model.predict_proba(features)[0][1]
-    prediction = model.predict(features)[0]
-
+async def root():
     return {
-        "rain_probability": round(prob, 4),
-        "will_rain": bool(prediction),
-        "input": data.dict()
+        "message": "Rainfall Prediction API",
+        "usage": "POST /predict/ with day_of_year, month, weekday, and year"
     }
