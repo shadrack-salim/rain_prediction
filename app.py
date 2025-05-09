@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 
 # Load model
-model = joblib.load('model/Rain_Classifier_With_Season.pkl')
+model = joblib.load('models/Rain_Classifier_With_Season.pkl')
 
 # Define FastAPI app
 app = FastAPI(title="Rain Predictor")
