@@ -15,17 +15,30 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Load model - with error handling
+# Load model - with better error handling
 try:
-    model_path = os.getenv('MODEL_PATH', 'models/Rain_Classifier_With_Season.pkl')
+    model_path = os.getenv('MODEL_PATH', 'model/Rain_Classifier_With_Season.pkl')
     model = joblib.load(model_path)
     logger.info(f"Model loaded successfully from {model_path}")
 except Exception as e:
-    logger.error(f"Error loading model: {e}")
+    logger.error(f"Error loading model: {str(e)}")
     model = None
 
 def get_season(month):
     return 'wet' if month in [5, 6, 7, 8, 9, 10] else 'dry'
+
+@app.route('/', methods=['GET'])
+def home():
+    """Homepage route"""
+    return jsonify({
+        "status": "online",
+        "message": "Rain Prediction API is running. Use /predict endpoint for predictions.",
+        "sample_request": {
+            "date_time": "2023-05-09 14:30",
+            "temperature": 25.5,
+            "humidity": 80.0
+        }
+    })
 
 @app.route('/health', methods=['GET'])
 def health_check():
