@@ -17,7 +17,7 @@ app = Flask(__name__)
 
 # Load model - with error handling
 try:
-    model_path = os.getenv('MODEL_PATH', 'model/Rain_Classifier_With_Season.pkl')
+    model_path = os.getenv('MODEL_PATH', 'models/Rain_Classifier_With_Season.pkl')
     model = joblib.load(model_path)
     logger.info(f"Model loaded successfully from {model_path}")
 except Exception as e:
