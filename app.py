@@ -1,38 +1,26 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
+from flask import Flask, request, jsonify
 import joblib
 import pandas as pd
 from datetime import datetime
 
-# === Load the trained model ===
+app = Flask(__name__)
+
+# Load model
 model = joblib.load('models/Rain_Classifier_With_Season.pkl')
 
-# === Create FastAPI app ===
-app = FastAPI(title="Rain Predictor API")
-
-# === Pydantic model for input ===
-class WeatherInput(BaseModel):
-    datetime_str: str  # Format: YYYY-MM-DD HH:MM
-    temperature_c: float
-    humidity_percent: float
-
-# === Season function ===
 def get_season(month):
     return 'wet' if month in [5, 6, 7, 8, 9, 10] else 'dry'
 
-# === Root route to verify API is live ===
-@app.get("/")
-def read_root():
-    return {"message": "Rain Predictor API is live ✅"}
+@app.route('/predict', methods=['POST'])
+def predict():
+    data = request.get_json()
 
-# === Prediction endpoint ===
-@app.post("/predict_rain")
-def predict_rain(data: WeatherInput):
-    try:
-        dt = datetime.strptime(data.datetime_str, "%Y-%m-%d %H:%M")
-    except ValueError:
-        return {"error": "datetime_str must be in 'YYYY-MM-DD HH:MM' format"}
+    # Parse input
+    date_str = data.get('date_time')
+    temp = float(data.get('temperature'))
+    humidity = float(data.get('humidity'))
 
+    dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
     hour = dt.hour
     dayofweek = dt.weekday()
     month = dt.month
@@ -40,23 +28,25 @@ def predict_rain(data: WeatherInput):
     season = get_season(month)
     season_wet = 1 if season == 'wet' else 0
 
-    # Prepare features
-    features = pd.DataFrame([{
+    # Create feature DataFrame
+    X_input = pd.DataFrame([{
         'hour': hour,
         'dayofweek': dayofweek,
         'month': month,
         'day': day,
-        'Temperature_C': data.temperature_c,
-        'Humidity_%': data.humidity_percent,
+        'Temperature_C': temp,
+        'Humidity_%': humidity,
         'season_wet': season_wet
     }])
 
     # Predict
-    prob = model.predict_proba(features)[0][1]
-    prediction = model.predict(features)[0]
+    prob = model.predict_proba(X_input)[0][1]
+    pred = model.predict(X_input)[0]
 
-    return {
-        "rain_probability": round(prob, 4),
-        "will_rain": bool(prediction),
-        "input": data.dict()
-    }
+    return jsonify({
+        'prediction': int(pred),
+        'probability': round(prob, 4)
+    })
+
+if __name__ == '__main__':
+    app.run(debug=True)
